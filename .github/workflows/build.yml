@@ -82,7 +82,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            option: ""
+            suffix: "-jsonrpc"
+          - arch: amd64
+            option: "--with-xmlrpc-c"
+            suffix: "-xmlrpc-c"
+          - arch: amd64
+            option: "--with-xmlrpc-tinyxml2"
+            suffix: "-tinyxml2"
+          - arch: arm64
+            option: ""
+            suffix: "-jsonrpc"
+          - arch: arm64
+            option: "--with-xmlrpc-c"
+            suffix: "-xmlrpc-c"
+          - arch: arm64
+            option: "--with-xmlrpc-tinyxml2"
+            suffix: "-tinyxml2"
 
     steps:
       - name: Checkout repository
@@ -98,19 +116,23 @@ jobs:
         env:
           VERSION_NUM: ${{ needs.check-version.outputs.version_num }}
           ARCH: ${{ matrix.arch }}
+          WITH_OPTION: ${{ matrix.option }}
+          SUFFIX: ${{ matrix.suffix }}
         run: |
           mkdir -p "${{ github.workspace }}/output"
           docker run --rm \
             --platform "linux/${{ matrix.arch }}" \
             -e "VERSION_NUM=${VERSION_NUM}" \
             -e "ARCH=${ARCH}" \
-            -v "${{ github.workspace }}/build/build.sh:/build.sh:ro" \
+            -e "WITH_OPTION=${WITH_OPTION}" \
+            -e "SUFFIX=${SUFFIX}" \
+            -v "${{ github.workspace }}/build.sh:/build.sh:ro" \
             -v "${{ github.workspace }}/output:/output" \
             alpine:latest /bin/sh /build.sh
 
       - name: Verify binary is statically linked
         run: |
-          FILE="output/rtorrent-linux-${{ matrix.arch }}"
+          FILE="output/rtorrent-linux-${{ matrix.arch }}${{ matrix.suffix }}"
           file "$FILE"
           if readelf -l "$FILE" | grep -q 'INTERP'; then
             echo "ERROR: Binary is NOT statically linked!"
@@ -120,74 +142,65 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: rtorrent-linux-${{ matrix.arch }}
-          path: output/rtorrent-linux-${{ matrix.arch }}
+          name: rtorrent-linux-${{ matrix.arch }}${{ matrix.suffix }}
+          path: output/rtorrent-linux-${{ matrix.arch }}${{ matrix.suffix }}
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
   # Create a GitHub release with both binaries and a checksum file.
   # The release tag mirrors the upstream rtorrent tag (e.g. v0.16.12).
   # --------------------------------------------------------------------------
-  # release:
-  #   name: Create GitHub Release
-  #   needs: [check-version, build]
-  #   if: needs.check-version.outputs.should_build == 'true'
-  #   runs-on: ubuntu-slim
-  #   permissions:
-  #     contents: write
+  release:
+    name: Create GitHub Release
+    needs: [check-version, build]
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: write
+      actions: read
 
-  #   steps:
-  #     - name: Delete existing release and tag if force_rebuild is set
-  #       if: inputs.force_rebuild == 'true'
-  #       env:
-  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: |
-  #         VERSION="${{ needs.check-version.outputs.version }}"
-  #         gh release delete "$VERSION" \
-  #           --repo "${{ github.repository }}" \
-  #           --yes \
-  #           --cleanup-tag \
-  #           2>/dev/null || true
+    steps:
+      - name: Delete existing release and tag if force_rebuild is set
+        if: inputs.force_rebuild == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          gh release delete "$VERSION" \
+            --repo "${{ github.repository }}" \
+            --yes \
+            --cleanup-tag \
+            2>/dev/null || true
 
-  #     - name: Download amd64 artifact
-  #       uses: actions/download-artifact@v8
-  #       with:
-  #         name: rtorrent-linux-amd64
-  #         path: artifacts
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rtorrent-linux-*
+          path: artifacts
+          merge-multiple: true
 
-  #     - name: Download arm64 artifact
-  #       uses: actions/download-artifact@v8
-  #       with:
-  #         name: rtorrent-linux-arm64
-  #         path: artifacts
+      - name: Generate SHA256 checksums
+        working-directory: artifacts
+        run: |
+          find . -maxdepth 1 -type f -name 'rtorrent-linux-*' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
 
-  #     - name: Generate SHA256 checksums
-  #       working-directory: artifacts
-  #       run: sha256sum rtorrent-linux-amd64 rtorrent-linux-arm64 > SHA256SUMS
+      - name: Compose release notes
+        env:
+          RELEASE_BODY: ${{ needs.check-version.outputs.release_body }}
+        run: |
+          printf '%s\n' "$RELEASE_BODY" > artifacts/RELEASE_BODY.md
 
-  #     - name: Compose release notes from upstream text
-  #       run: |
-  #         printf '%s\n' "${{ needs.check-version.outputs.release_body }}" > artifacts/RELEASE_BODY.md
-  #         cat <<'EOF' >> artifacts/RELEASE_BODY.md
-
-  #         ---
-
-  #         Static binary assets for this repository:
-  #         - rtorrent-linux-amd64
-  #         - rtorrent-linux-arm64
-  #         - SHA256SUMS
-  #         EOF
-
-  #     - name: Create GitHub release
-  #       uses: softprops/action-gh-release@v3
-  #       with:
-  #         tag_name: ${{ needs.check-version.outputs.version }}
-  #         name: "rTorrent ${{ needs.check-version.outputs.version }}"
-  #         body_path: artifacts/RELEASE_BODY.md
-  #         files: |
-  #           artifacts/rtorrent-linux-amd64
-  #           artifacts/rtorrent-linux-arm64
-  #           artifacts/SHA256SUMS
-  #         draft: false
-  #         prerelease: false
-  #         fail_on_unmatched_files: true
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.check-version.outputs.version }}
+          name: rTorrent ${{ needs.check-version.outputs.version }}
+          body_path: artifacts/RELEASE_BODY.md
+          files: |
+            artifacts/rtorrent-linux-*
+            artifacts/SHA256SUMS
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
