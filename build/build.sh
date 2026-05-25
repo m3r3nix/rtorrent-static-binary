@@ -19,17 +19,25 @@ set -eux
 # ---------------------------------------------------------------------------
 apk add --no-cache \
     build-base \
-    autoconf \
-    automake \
-    libtool \
+    gawk \
     pkgconf \
+    wget \
+    cppunit-dev \
     curl-dev \
+    curl-static \
+    brotli-static \
+    zstd-static \
+    libpsl-static \
+    libidn2-static \
+    nghttp2-static \
     libunistring-dev \
+    libunistring-static \
     ncurses-dev \
     ncurses-static \
     openssl-dev \
+    openssl-libs-static \
     zlib-dev \
-    wget
+    zlib-static 
 
 # ---------------------------------------------------------------------------
 # 2. Build libtorrent (same version tag as rtorrent)
@@ -46,6 +54,7 @@ cd "libtorrent-${VERSION_NUM}"
     --enable-static \
     --disable-shared \
     PKG_CONFIG="pkg-config --static" \
+    CFLAGS="-Os" \
     CXXFLAGS="-Os"
 
 make -j"$(nproc)"
@@ -65,10 +74,10 @@ cd "rtorrent-${VERSION_NUM}"
     --enable-static \
     --disable-shared \
     PKG_CONFIG="pkg-config --static" \
-    LDFLAGS="-static -Wl,--as-needed" \
+    CFLAGS="-Os" \
     CXXFLAGS="-Os"
 
-make -j"$(nproc)"
+make -j"$(nproc)" LDFLAGS="-all-static -Wl,--as-needed"
 
 # ---------------------------------------------------------------------------
 # 4. Copy and verify the output binary
@@ -79,5 +88,4 @@ cp src/rtorrent "${OUTPUT}"
 strip "${OUTPUT}"
 
 echo "=== Build complete ==="
-file "${OUTPUT}"
 ls -lh "${OUTPUT}"
