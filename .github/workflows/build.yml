@@ -19,9 +19,12 @@ jobs:
   check-version:
     name: Check for New Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version:     ${{ steps.release.outputs.version }}
       version_num: ${{ steps.release.outputs.version_num }}
+      release_body: ${{ steps.release.outputs.release_body }}
       should_build: ${{ steps.check.outputs.should_build }}
 
     steps:
@@ -33,8 +36,14 @@ jobs:
           RELEASE_JSON=$(gh api repos/rakshasa/rtorrent/releases/latest)
           VERSION=$(echo "$RELEASE_JSON" | jq -r .tag_name)
           VERSION_NUM="${VERSION#v}"
+          RELEASE_BODY=$(echo "$RELEASE_JSON" | jq -r '.body // ""')
           echo "version=$VERSION"         >> "$GITHUB_OUTPUT"
           echo "version_num=$VERSION_NUM" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_body<<EOF"
+            echo "$RELEASE_BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
           echo "Latest upstream rtorrent: $VERSION"
 
       - name: Check if this version is already released in this repository
@@ -68,6 +77,8 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -152,32 +163,25 @@ jobs:
         working-directory: artifacts
         run: sha256sum rtorrent-linux-amd64 rtorrent-linux-arm64 > SHA256SUMS
 
+      - name: Compose release notes from upstream text
+        run: |
+          printf '%s\n' "${{ needs.check-version.outputs.release_body }}" > artifacts/RELEASE_BODY.md
+          cat <<'EOF' >> artifacts/RELEASE_BODY.md
+
+          ---
+
+          Static binary assets for this repository:
+          - rtorrent-linux-amd64
+          - rtorrent-linux-arm64
+          - SHA256SUMS
+          EOF
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
           name: "rTorrent ${{ needs.check-version.outputs.version }}"
-          body: |
-            Static binary builds of **rTorrent ${{ needs.check-version.outputs.version }}** for Linux, compiled from the official upstream release sources.
-
-            Both `libtorrent` and `rtorrent` are built from version **${{ needs.check-version.outputs.version_num }}**, matching the upstream release tag.
-
-            **Upstream sources used:**
-            - [`libtorrent-${{ needs.check-version.outputs.version_num }}.tar.gz`](https://github.com/rakshasa/rtorrent/releases/download/${{ needs.check-version.outputs.version }}/libtorrent-${{ needs.check-version.outputs.version_num }}.tar.gz)
-            - [`rtorrent-${{ needs.check-version.outputs.version_num }}.tar.gz`](https://github.com/rakshasa/rtorrent/releases/download/${{ needs.check-version.outputs.version }}/rtorrent-${{ needs.check-version.outputs.version_num }}.tar.gz)
-
-            ## Downloads
-
-            | File | Architecture |
-            |------|-------------|
-            | `rtorrent-linux-amd64` | x86\_64 / AMD64 |
-            | `rtorrent-linux-arm64` | AArch64 / ARM64 |
-
-            ## Verify checksums
-
-            ```sh
-            sha256sum -c SHA256SUMS
-            ```
+          body_path: artifacts/RELEASE_BODY.md
           files: |
             artifacts/rtorrent-linux-amd64
             artifacts/rtorrent-linux-arm64
