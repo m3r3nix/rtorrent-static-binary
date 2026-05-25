@@ -88,4 +88,5 @@ cp src/rtorrent "${OUTPUT}"
 strip "${OUTPUT}"
 
 echo "=== Build complete ==="
+file "${OUTPUT}"
 ls -lh "${OUTPUT}"
