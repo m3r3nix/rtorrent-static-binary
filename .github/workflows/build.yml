@@ -110,11 +110,12 @@ jobs:
 
       - name: Verify binary is statically linked
         run: |
-          FILE_OUTPUT=$(file "output/rtorrent-linux-${{ matrix.arch }}")
-          echo "$FILE_OUTPUT" | grep -qi 'dynamically linked' && {
-            echo "ERROR: Binary is not statically linked!"
+          FILE="output/rtorrent-linux-${{ matrix.arch }}"
+          file "$FILE"
+          if readelf -l "$FILE" | grep -q 'INTERP'; then
+            echo "ERROR: Binary is NOT statically linked!"
             exit 1
-          }
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
