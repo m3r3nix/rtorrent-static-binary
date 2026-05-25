@@ -23,18 +23,12 @@ apk add --no-cache \
     automake \
     libtool \
     pkgconf \
-    openssl-dev \
-    openssl-libs-static \
-    zlib-dev \
-    zlib-static \
-    libsigc++-dev \
+    curl-dev \
+    libunistring-dev \
     ncurses-dev \
     ncurses-static \
-    curl-dev \
-    curl-static \
-    nghttp2-static \
-    brotli-static \
-    libssh2-static \
+    openssl-dev \
+    zlib-dev \
     wget
 
 # ---------------------------------------------------------------------------
@@ -52,7 +46,6 @@ cd "libtorrent-${VERSION_NUM}"
     --enable-static \
     --disable-shared \
     PKG_CONFIG="pkg-config --static" \
-    CFLAGS="-Os" \
     CXXFLAGS="-Os"
 
 make -j"$(nproc)"
@@ -72,9 +65,8 @@ cd "rtorrent-${VERSION_NUM}"
     --enable-static \
     --disable-shared \
     PKG_CONFIG="pkg-config --static" \
-    CFLAGS="-Os" \
-    CXXFLAGS="-Os" \
-    LDFLAGS="-static -Wl,--as-needed"
+    LDFLAGS="-static -Wl,--as-needed" \
+    CXXFLAGS="-Os"
 
 make -j"$(nproc)"
 
