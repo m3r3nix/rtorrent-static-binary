@@ -126,66 +126,66 @@ jobs:
   # Create a GitHub release with both binaries and a checksum file.
   # The release tag mirrors the upstream rtorrent tag (e.g. v0.16.12).
   # --------------------------------------------------------------------------
-  release:
-    name: Create GitHub Release
-    needs: [check-version, build]
-    if: needs.check-version.outputs.should_build == 'true'
-    runs-on: ubuntu-slim
-    permissions:
-      contents: write
+  # release:
+  #   name: Create GitHub Release
+  #   needs: [check-version, build]
+  #   if: needs.check-version.outputs.should_build == 'true'
+  #   runs-on: ubuntu-slim
+  #   permissions:
+  #     contents: write
 
-    steps:
-      - name: Delete existing release and tag if force_rebuild is set
-        if: inputs.force_rebuild == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.check-version.outputs.version }}"
-          gh release delete "$VERSION" \
-            --repo "${{ github.repository }}" \
-            --yes \
-            --cleanup-tag \
-            2>/dev/null || true
+  #   steps:
+  #     - name: Delete existing release and tag if force_rebuild is set
+  #       if: inputs.force_rebuild == 'true'
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         VERSION="${{ needs.check-version.outputs.version }}"
+  #         gh release delete "$VERSION" \
+  #           --repo "${{ github.repository }}" \
+  #           --yes \
+  #           --cleanup-tag \
+  #           2>/dev/null || true
 
-      - name: Download amd64 artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: rtorrent-linux-amd64
-          path: artifacts
+  #     - name: Download amd64 artifact
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: rtorrent-linux-amd64
+  #         path: artifacts
 
-      - name: Download arm64 artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: rtorrent-linux-arm64
-          path: artifacts
+  #     - name: Download arm64 artifact
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: rtorrent-linux-arm64
+  #         path: artifacts
 
-      - name: Generate SHA256 checksums
-        working-directory: artifacts
-        run: sha256sum rtorrent-linux-amd64 rtorrent-linux-arm64 > SHA256SUMS
+  #     - name: Generate SHA256 checksums
+  #       working-directory: artifacts
+  #       run: sha256sum rtorrent-linux-amd64 rtorrent-linux-arm64 > SHA256SUMS
 
-      - name: Compose release notes from upstream text
-        run: |
-          printf '%s\n' "${{ needs.check-version.outputs.release_body }}" > artifacts/RELEASE_BODY.md
-          cat <<'EOF' >> artifacts/RELEASE_BODY.md
+  #     - name: Compose release notes from upstream text
+  #       run: |
+  #         printf '%s\n' "${{ needs.check-version.outputs.release_body }}" > artifacts/RELEASE_BODY.md
+  #         cat <<'EOF' >> artifacts/RELEASE_BODY.md
 
-          ---
+  #         ---
 
-          Static binary assets for this repository:
-          - rtorrent-linux-amd64
-          - rtorrent-linux-arm64
-          - SHA256SUMS
-          EOF
+  #         Static binary assets for this repository:
+  #         - rtorrent-linux-amd64
+  #         - rtorrent-linux-arm64
+  #         - SHA256SUMS
+  #         EOF
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.check-version.outputs.version }}
-          name: "rTorrent ${{ needs.check-version.outputs.version }}"
-          body_path: artifacts/RELEASE_BODY.md
-          files: |
-            artifacts/rtorrent-linux-amd64
-            artifacts/rtorrent-linux-arm64
-            artifacts/SHA256SUMS
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: true
+  #     - name: Create GitHub release
+  #       uses: softprops/action-gh-release@v3
+  #       with:
+  #         tag_name: ${{ needs.check-version.outputs.version }}
+  #         name: "rTorrent ${{ needs.check-version.outputs.version }}"
+  #         body_path: artifacts/RELEASE_BODY.md
+  #         files: |
+  #           artifacts/rtorrent-linux-amd64
+  #           artifacts/rtorrent-linux-arm64
+  #           artifacts/SHA256SUMS
+  #         draft: false
+  #         prerelease: false
+  #         fail_on_unmatched_files: true
