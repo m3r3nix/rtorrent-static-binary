@@ -38,7 +38,7 @@ Use the default binary unless you specifically need XML-RPC compatibility.
 
 ## Installation
 
-1. Download the binary for your architecture and preferred variant from the latest release.
+1. Download the binary for your architecture and preferred variant from the latest release: [here](https://github.com/m3r3nix/rtorrent-static-binary/releases).
 
 2. Make it executable:
 
