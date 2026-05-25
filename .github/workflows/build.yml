@@ -1,0 +1,191 @@
+name: Build Static rTorrent Binary
+
+# Run daily to check for new upstream releases, and allow manual triggering.
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC every day
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if this version was already released'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Detect whether rakshasa/rtorrent has a release we haven't built yet.
+  # --------------------------------------------------------------------------
+  check-version:
+    name: Check for New Release
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    outputs:
+      version:     ${{ steps.release.outputs.version }}
+      version_num: ${{ steps.release.outputs.version_num }}
+      release_body: ${{ steps.release.outputs.release_body }}
+      should_build: ${{ steps.check.outputs.should_build }}
+
+    steps:
+      - name: Fetch latest rtorrent release from rakshasa/rtorrent
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_JSON=$(gh api repos/rakshasa/rtorrent/releases/latest)
+          VERSION=$(echo "$RELEASE_JSON" | jq -r .tag_name)
+          VERSION_NUM="${VERSION#v}"
+          RELEASE_BODY=$(echo "$RELEASE_JSON" | jq -r '.body // ""')
+          echo "version=$VERSION"         >> "$GITHUB_OUTPUT"
+          echo "version_num=$VERSION_NUM" >> "$GITHUB_OUTPUT"
+          {
+            echo "release_body<<EOF"
+            echo "$RELEASE_BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Latest upstream rtorrent: $VERSION"
+
+      - name: Check if this version is already released in this repository
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          FORCE="${{ inputs.force_rebuild || 'false' }}"
+
+          if gh api "repos/${{ github.repository }}/releases/tags/$VERSION" \
+               --silent 2>/dev/null; then
+            if [[ "$FORCE" == "true" ]]; then
+              echo "Release $VERSION already exists but force_rebuild=true. Rebuilding."
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Release $VERSION already exists. Skipping build."
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "Release $VERSION not found in this repository. Scheduling build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --------------------------------------------------------------------------
+  # Build the static binary for each target architecture.
+  # Both amd64 and arm64 jobs run in parallel; arm64 uses QEMU emulation.
+  # --------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-slim
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU for arm64 cross-compilation
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Build static rtorrent binary inside Alpine Linux container
+        env:
+          VERSION_NUM: ${{ needs.check-version.outputs.version_num }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p "${{ github.workspace }}/output"
+          docker run --rm \
+            --platform "linux/${{ matrix.arch }}" \
+            -e "VERSION_NUM=${VERSION_NUM}" \
+            -e "ARCH=${ARCH}" \
+            -v "${{ github.workspace }}/build/build.sh:/build.sh:ro" \
+            -v "${{ github.workspace }}/output:/output" \
+            alpine:latest /bin/sh /build.sh
+
+      - name: Verify binary is statically linked
+        run: |
+          echo "--- file output ---"
+          file "output/rtorrent-linux-${{ matrix.arch }}"
+          echo "--- size ---"
+          ls -lh "output/rtorrent-linux-${{ matrix.arch }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtorrent-linux-${{ matrix.arch }}
+          path: output/rtorrent-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Create a GitHub release with both binaries and a checksum file.
+  # The release tag mirrors the upstream rtorrent tag (e.g. v0.16.12).
+  # --------------------------------------------------------------------------
+  # release:
+  #   name: Create GitHub Release
+  #   needs: [check-version, build]
+  #   if: needs.check-version.outputs.should_build == 'true'
+  #   runs-on: ubuntu-slim
+  #   permissions:
+  #     contents: write
+
+  #   steps:
+  #     - name: Delete existing release and tag if force_rebuild is set
+  #       if: inputs.force_rebuild == 'true'
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         VERSION="${{ needs.check-version.outputs.version }}"
+  #         gh release delete "$VERSION" \
+  #           --repo "${{ github.repository }}" \
+  #           --yes \
+  #           --cleanup-tag \
+  #           2>/dev/null || true
+
+  #     - name: Download amd64 artifact
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: rtorrent-linux-amd64
+  #         path: artifacts
+
+  #     - name: Download arm64 artifact
+  #       uses: actions/download-artifact@v8
+  #       with:
+  #         name: rtorrent-linux-arm64
+  #         path: artifacts
+
+  #     - name: Generate SHA256 checksums
+  #       working-directory: artifacts
+  #       run: sha256sum rtorrent-linux-amd64 rtorrent-linux-arm64 > SHA256SUMS
+
+  #     - name: Compose release notes from upstream text
+  #       run: |
+  #         printf '%s\n' "${{ needs.check-version.outputs.release_body }}" > artifacts/RELEASE_BODY.md
+  #         cat <<'EOF' >> artifacts/RELEASE_BODY.md
+
+  #         ---
+
+  #         Static binary assets for this repository:
+  #         - rtorrent-linux-amd64
+  #         - rtorrent-linux-arm64
+  #         - SHA256SUMS
+  #         EOF
+
+  #     - name: Create GitHub release
+  #       uses: softprops/action-gh-release@v3
+  #       with:
+  #         tag_name: ${{ needs.check-version.outputs.version }}
+  #         name: "rTorrent ${{ needs.check-version.outputs.version }}"
+  #         body_path: artifacts/RELEASE_BODY.md
+  #         files: |
+  #           artifacts/rtorrent-linux-amd64
+  #           artifacts/rtorrent-linux-arm64
+  #           artifacts/SHA256SUMS
+  #         draft: false
+  #         prerelease: false
+  #         fail_on_unmatched_files: true
