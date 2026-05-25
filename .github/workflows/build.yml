@@ -3,13 +3,13 @@ name: Build Static rTorrent Binary
 # Run daily to check for new upstream releases, and allow manual triggering.
 on:
   schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC every day
+    - cron: '0 2 * * *'   # 02:00 UTC every day
   workflow_dispatch:
     inputs:
       force_rebuild:
         description: 'Force rebuild even if this version was already released'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
   # --------------------------------------------------------------------------
   check-version:
     name: Check for New Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: read
     outputs:
@@ -76,7 +76,7 @@ jobs:
     name: Build (${{ matrix.arch }})
     needs: check-version
     if: needs.check-version.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: read
     strategy:
@@ -86,11 +86,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up QEMU for arm64 cross-compilation
         if: matrix.arch == 'arm64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
@@ -106,7 +106,7 @@ jobs:
             -e "ARCH=${ARCH}" \
             -v "${{ github.workspace }}/build/build.sh:/build.sh:ro" \
             -v "${{ github.workspace }}/output:/output" \
-            alpine:3.21 /bin/sh /build.sh
+            alpine:latest /bin/sh /build.sh
 
       - name: Verify binary is statically linked
         run: |
@@ -116,7 +116,7 @@ jobs:
           ls -lh "output/rtorrent-linux-${{ matrix.arch }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7
         with:
           name: rtorrent-linux-${{ matrix.arch }}
           path: output/rtorrent-linux-${{ matrix.arch }}
@@ -130,7 +130,7 @@ jobs:
     name: Create GitHub Release
     needs: [check-version, build]
     if: needs.check-version.outputs.should_build == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     permissions:
       contents: write
 
@@ -148,13 +148,13 @@ jobs:
             2>/dev/null || true
 
       - name: Download amd64 artifact
-        uses: actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@v8
         with:
           name: rtorrent-linux-amd64
           path: artifacts
 
       - name: Download arm64 artifact
-        uses: actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@v8
         with:
           name: rtorrent-linux-arm64
           path: artifacts
@@ -177,7 +177,7 @@ jobs:
           EOF
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.check-version.outputs.version }}
           name: "rTorrent ${{ needs.check-version.outputs.version }}"
