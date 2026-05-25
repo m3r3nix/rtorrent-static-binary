@@ -76,7 +76,7 @@ jobs:
     name: Build (${{ matrix.arch }})
     needs: check-version
     if: needs.check-version.outputs.should_build == 'true'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     strategy:
