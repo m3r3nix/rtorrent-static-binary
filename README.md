@@ -46,7 +46,7 @@ Use the default binary unless you specifically need XML-RPC compatibility.
 chmod +x rtorrent-linux-*
 ```
 
-3. Optionally, move it into your PATH with the simplified filename rtorrent:
+3. Optionally, move it into your PATH with the simplified filename `rtorrent`:
 ```sh
 sudo mv rtorrent-linux-* /usr/local/bin/rtorrent
 ```

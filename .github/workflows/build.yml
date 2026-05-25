@@ -6,6 +6,11 @@ on:
     - cron: '0 2 * * *'   # 02:00 UTC every day
   workflow_dispatch:
     inputs:
+      version:
+        description: 'rtorrent tag to build, e.g. v0.16.12 or 0.16.12. Empty = latest.'
+        required: false
+        default: ''
+        type: string
       force_rebuild:
         description: 'Force rebuild even if this version was already released'
         required: false
@@ -32,9 +37,15 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          RELEASE_JSON=$(gh api repos/rakshasa/rtorrent/releases/latest)
-          VERSION=$(echo "$RELEASE_JSON" | jq -r .tag_name)
+          if [[ -n "$INPUT_VERSION" ]]; then
+            VERSION="$INPUT_VERSION"
+            RELEASE_JSON=$(gh api "repos/rakshasa/rtorrent/releases/tags/$VERSION")
+          else
+            RELEASE_JSON=$(gh api repos/rakshasa/rtorrent/releases/latest)
+            VERSION=$(echo "$RELEASE_JSON" | jq -r .tag_name)
+          fi
           VERSION_NUM="${VERSION#v}"
           RELEASE_BODY=$(echo "$RELEASE_JSON" | jq -r '.body // ""')
           echo "version=$VERSION"         >> "$GITHUB_OUTPUT"
