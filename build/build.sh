@@ -71,7 +71,6 @@ cd "rtorrent-${VERSION_NUM}"
 ./configure \
     --enable-static \
     --disable-shared \
-    --without-xmlrpc-c \
     PKG_CONFIG="pkg-config --static" \
     CFLAGS="-Os" \
     CXXFLAGS="-Os" \
