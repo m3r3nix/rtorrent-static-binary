@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'rtorrent tag to build, e.g. v0.16.12 or 0.16.12. Empty = latest.'
+        description: 'rTorrent tag to build, e.g. v0.16.12 / Empty = latest.'
         required: false
         default: ''
         type: string
