@@ -73,7 +73,7 @@ jobs:
   # Both amd64 and arm64 jobs run in parallel; arm64 uses QEMU emulation.
   # --------------------------------------------------------------------------
   build:
-    name: Build (${{ matrix.arch }})
+    name: Build (${{ matrix.arch }}${{ matrix.suffix }})
     needs: check-version
     if: needs.check-version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
@@ -85,22 +85,22 @@ jobs:
         include:
           - arch: amd64
             option: ""
-            suffix: "-jsonrpc"
+            suffix: ""
           - arch: amd64
             option: "--with-xmlrpc-c"
             suffix: "-xmlrpc-c"
           - arch: amd64
             option: "--with-xmlrpc-tinyxml2"
-            suffix: "-tinyxml2"
+            suffix: "-xmlrpc-tinyxml2"
           - arch: arm64
             option: ""
-            suffix: "-jsonrpc"
+            suffix: ""
           - arch: arm64
             option: "--with-xmlrpc-c"
             suffix: "-xmlrpc-c"
           - arch: arm64
             option: "--with-xmlrpc-tinyxml2"
-            suffix: "-tinyxml2"
+            suffix: "-xmlrpc-tinyxml2"
 
     steps:
       - name: Checkout repository
