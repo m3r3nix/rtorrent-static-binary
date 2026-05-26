@@ -211,8 +211,8 @@ jobs:
           ALPINE_VERSION: ${{ needs.build.outputs.alpine_version }}
           RELEASE_BODY: ${{ needs.check-version.outputs.release_body }}
         run: |
-          printf '%s\n' "$RELEASE_BODY" > artifacts/RELEASE_BODY.md
-          printf '\nBinaries built on: Alpine Linux %s\n' "$ALPINE_VERSION" >> artifacts/RELEASE_BODY.md
+          printf '%s\n\n' "$RELEASE_BODY" > artifacts/RELEASE_BODY.md
+          printf -- '---\n\n**Static binaries built on:** Alpine Linux %s\n' "$ALPINE_VERSION" >> artifacts/RELEASE_BODY.md
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
