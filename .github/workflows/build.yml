@@ -112,6 +112,8 @@ jobs:
           - arch: arm64
             option: "--with-xmlrpc-tinyxml2"
             suffix: "-xmlrpc-tinyxml2"
+    outputs:
+      alpine_version: ${{ steps.alpine.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -122,6 +124,13 @@ jobs:
         uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
+
+      - name: Read Alpine version number from alpine:latest
+        id: alpine
+        run: |
+          ALPINE_VERSION=$(docker run --rm alpine:latest cat /etc/alpine-release)
+          echo "version=$ALPINE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Alpine version: $ALPINE_VERSION"
 
       - name: Build static rtorrent binary inside Alpine Linux container
         env:
@@ -199,9 +208,11 @@ jobs:
 
       - name: Compose release notes
         env:
+          ALPINE_VERSION: ${{ needs.build.outputs.alpine_version }}
           RELEASE_BODY: ${{ needs.check-version.outputs.release_body }}
         run: |
           printf '%s\n' "$RELEASE_BODY" > artifacts/RELEASE_BODY.md
+          printf '\nBinaries built on: Alpine Linux %s\n' "$ALPINE_VERSION" >> artifacts/RELEASE_BODY.md
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
