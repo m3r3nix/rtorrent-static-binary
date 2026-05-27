@@ -59,8 +59,10 @@ tar xf "libtorrent-${VERSION_NUM}.tar.gz"
 cd "libtorrent-${VERSION_NUM}"
 
 ./configure \
+    --enable-aligned \
     --enable-static \
     --disable-shared \
+    --disable-debug \
     PKG_CONFIG="pkg-config --static" \
     CFLAGS="-Os" \
     CXXFLAGS="-Os"
@@ -82,6 +84,7 @@ cd "rtorrent-${VERSION_NUM}"
     ${WITH_OPTION} \
     --enable-static \
     --disable-shared \
+    --disable-debug \
     PKG_CONFIG="pkg-config --static" \
     CFLAGS="-Os" \
     CXXFLAGS="-Os"
