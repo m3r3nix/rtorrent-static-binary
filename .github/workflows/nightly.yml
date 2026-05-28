@@ -1,4 +1,4 @@
-name: Build nightly static rTorrent binaries
+name: Build static rTorrent binaries (nightly)
 
 # Run daily to build a nightly binary when rtorrent or libtorrent moved.
 on:
