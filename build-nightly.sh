@@ -1,11 +1,12 @@
 #!/bin/sh
-# build.sh
+# build-nightly.sh
 #
-# Compiles a fully-static rtorrent binary inside an Alpine Linux container.
+# Compiles a fully-static rtorrent binary from upstream git commits inside an
+# Alpine Linux container.
 #
 # Required environment variables:
-#   VERSION_NUM   rtorrent / libtorrent version without the leading 'v'
-#                 (e.g.  0.16.12)
+#   RTORRENT_SHA  Git commit hash for rtorrent (e.g. 1a2b3c4)
+#   LIBTORRENT_SHA Git commit hash for libtorrent (e.g. 1a2b3c4)
 #   ARCH          Output filename suffix that identifies the target CPU
 #                 (e.g.  amd64  or  arm64)
 # Optional environment variables:
@@ -15,7 +16,8 @@
 
 set -eux
 
-: "${VERSION_NUM:?VERSION_NUM must be set (e.g. 0.16.12)}"
+: "${RTORRENT_SHA:?RTORRENT_SHA must be set}"
+: "${LIBTORRENT_SHA:?LIBTORRENT_SHA must be set}"
 : "${ARCH:?ARCH must be set (e.g. amd64 or arm64)}"
 : "${WITH_OPTION:=}"
 : "${SUFFIX:=}"
@@ -24,40 +26,45 @@ set -eux
 # 1. System packages
 # ---------------------------------------------------------------------------
 apk add --no-cache \
+    autoconf \
+    autoconf-archive \
+    automake \
     build-base \
-    gawk \
-    pkgconf \
-    wget \
     cppunit-dev \
+    gawk \
+    gettext-dev \
+    git \
+    libtool \
+    pkgconf \
     curl-dev \
     curl-static \
     brotli-static \
-    zstd-static \
-    libpsl-static \
     libidn2-static \
-    nghttp2-static \
+    libpsl-static \
     libunistring-dev \
     libunistring-static \
     ncurses-dev \
     ncurses-static \
+    nghttp2-static \
     openssl-dev \
     openssl-libs-static \
     xmlrpc-c-dev \
     xmlrpc-c-static \
     zlib-dev \
-    zlib-static 
+    zlib-static \
+    zstd-static
 
 # ---------------------------------------------------------------------------
-# 2. Build libtorrent (same version tag as rtorrent)
+# 2. Build libtorrent from the selected upstream commit
 # ---------------------------------------------------------------------------
 mkdir -p /build
 cd /build
 
-wget -q \
-    "https://github.com/rakshasa/rtorrent/releases/download/v${VERSION_NUM}/libtorrent-${VERSION_NUM}.tar.gz"
-tar xf "libtorrent-${VERSION_NUM}.tar.gz"
-cd "libtorrent-${VERSION_NUM}"
+git clone --filter=blob:none --single-branch https://github.com/rakshasa/libtorrent.git
+cd libtorrent
+git checkout "$LIBTORRENT_SHA"
 
+autoreconf -fi
 ./configure \
     --enable-aligned \
     --enable-static \
@@ -71,15 +78,15 @@ make -j"$(nproc)"
 make install
 
 # ---------------------------------------------------------------------------
-# 3. Build rtorrent (same version tag as libtorrent)
+# 3. Build rtorrent from the selected upstream commit
 # ---------------------------------------------------------------------------
 cd /build
 
-wget -q \
-    "https://github.com/rakshasa/rtorrent/releases/download/v${VERSION_NUM}/rtorrent-${VERSION_NUM}.tar.gz"
-tar xf "rtorrent-${VERSION_NUM}.tar.gz"
-cd "rtorrent-${VERSION_NUM}"
+git clone --filter=blob:none --single-branch https://github.com/rakshasa/rtorrent.git
+cd rtorrent
+git checkout "$RTORRENT_SHA"
 
+autoreconf -fi
 ./configure \
     ${WITH_OPTION} \
     --enable-static \

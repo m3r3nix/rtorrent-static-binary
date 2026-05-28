@@ -1,0 +1,296 @@
+name: Build nightly static rTorrent binaries
+
+# Run daily to build a nightly binary when rtorrent or libtorrent moved.
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC every day
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even when upstream commits are unchanged'
+        required: false
+        default: false
+        type: boolean
+      rtorrent_sha:
+        description: 'rTorrent commit SHA to build, e.g. 2f3e4d5 / Empty = latest.'
+        required: false
+        default: ''
+        type: string
+      libtorrent_sha:
+        description: 'libtorrent commit SHA to build, e.g. 1a2b3c4 / Empty = latest.'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Detect whether rakshasa/rtorrent or rakshasa/libtorrent has new commits
+  # since the last nightly build that produced binaries.
+  # --------------------------------------------------------------------------
+  check-version:
+    name: Check for New Upstream Commits
+    runs-on: ubuntu-slim
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      rtorrent_sha:       ${{ steps.upstream.outputs.rtorrent_sha }}
+      rtorrent_short_sha: ${{ steps.upstream.outputs.rtorrent_short_sha }}
+      libtorrent_sha:       ${{ steps.upstream.outputs.libtorrent_sha }}
+      libtorrent_short_sha: ${{ steps.upstream.outputs.libtorrent_short_sha }}
+      build_id:          ${{ steps.upstream.outputs.build_id }}
+      should_build:      ${{ steps.check.outputs.should_build }}
+
+    steps:
+      - name: Fetch latest upstream commits
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_RTORRENT_SHA: ${{ inputs.rtorrent_sha }}
+          INPUT_LIBTORRENT_SHA: ${{ inputs.libtorrent_sha }}
+        run: |
+          set -euo pipefail
+
+          fetch_head() {
+            repo="$1"
+            branch=$(gh api "repos/rakshasa/${repo}" --jq .default_branch)
+            sha=$(gh api "repos/rakshasa/${repo}/commits/${branch}" --jq .sha)
+            short_sha=$(printf '%s' "$sha" | cut -c1-7)
+
+            echo "${repo}_branch=${branch}" >> "$GITHUB_OUTPUT"
+            echo "${repo}_sha=${sha}" >> "$GITHUB_OUTPUT"
+            echo "${repo}_short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+            echo "${repo}: ${branch} @ ${sha}"
+          }
+
+          if [[ -n "$INPUT_RTORRENT_SHA" ]]; then
+            echo "rtorrent_sha=$INPUT_RTORRENT_SHA" >> "$GITHUB_OUTPUT"
+            echo "rtorrent_short_sha=$(printf '%s' "$INPUT_RTORRENT_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+            echo "Using user-provided rTorrent SHA: $INPUT_RTORRENT_SHA"
+          else
+             fetch_head rtorrent
+          fi
+
+          if [[ -n "$INPUT_LIBTORRENT_SHA" ]]; then
+            echo "libtorrent_sha=$INPUT_LIBTORRENT_SHA" >> "$GITHUB_OUTPUT"
+            echo "libtorrent_short_sha=$(printf '%s' "$INPUT_LIBTORRENT_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+            echo "Using user-provided libtorrent SHA: $INPUT_LIBTORRENT_SHA"
+          else
+             fetch_head libtorrent
+          fi
+
+          rtorrent_sha=$(awk -F= '$1 == "rtorrent_sha" { print $2 }' "$GITHUB_OUTPUT")
+          libtorrent_sha=$(awk -F= '$1 == "libtorrent_sha" { print $2 }' "$GITHUB_OUTPUT")
+          rtorrent_short_sha=$(printf '%s' "$rtorrent_sha" | cut -c1-7)
+          libtorrent_short_sha=$(printf '%s' "$libtorrent_sha" | cut -c1-7)
+          echo "build_id=${rtorrent_short_sha}-${libtorrent_short_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Check last nightly build
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild || 'false' }}
+          CURRENT_RTORRENT_SHA: ${{ steps.upstream.outputs.rtorrent_sha }}
+          CURRENT_LIBTORRENT_SHA: ${{ steps.upstream.outputs.libtorrent_sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$FORCE_REBUILD" == "true" ]]; then
+            echo "force_rebuild=true; scheduling nightly build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mkdir -p previous
+          previous_run_id=""
+
+          while read -r run_id; do
+            [[ -n "$run_id" ]] || continue
+            rm -rf previous
+            mkdir -p previous
+
+            if gh run download "$run_id" \
+                 --repo "${{ github.repository }}" \
+                 --name nightly-upstream-commits \
+                 --dir previous >/dev/null 2>&1; then
+              previous_run_id="$run_id"
+              break
+            fi
+          done < <(
+            gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow nightly.yml \
+              --status success \
+              --limit 30 \
+              --json databaseId \
+              --jq '.[].databaseId'
+          )
+
+          if [[ -z "$previous_run_id" || ! -f previous/UPSTREAM_COMMITS ]]; then
+            echo "No previous nightly build metadata found. Scheduling build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          previous_rtorrent_sha=$(awk -F= '$1 == "rtorrent_sha" { print $2 }' previous/UPSTREAM_COMMITS)
+          previous_libtorrent_sha=$(awk -F= '$1 == "libtorrent_sha" { print $2 }' previous/UPSTREAM_COMMITS)
+
+          echo "Last nightly build run: ${previous_run_id}"
+          echo "Previous rtorrent:   ${previous_rtorrent_sha}"
+          echo "Current rtorrent:    ${CURRENT_RTORRENT_SHA}"
+          echo "Previous libtorrent: ${previous_libtorrent_sha}"
+          echo "Current libtorrent:  ${CURRENT_LIBTORRENT_SHA}"
+
+          if [[ "$previous_rtorrent_sha" == "$CURRENT_RTORRENT_SHA" && \
+                "$previous_libtorrent_sha" == "$CURRENT_LIBTORRENT_SHA" ]]; then
+            echo "No new upstream commits since the last nightly build. Skipping."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New upstream commit detected. Scheduling build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --------------------------------------------------------------------------
+  # Build the static binary for each target architecture.
+  # Both amd64 and arm64 jobs run in parallel; arm64 uses QEMU emulation.
+  # --------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.arch }}${{ matrix.option }})
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            option: ""
+            suffix: "-daily-${{ needs.check-version.outputs.build_id }}"
+          - arch: amd64
+            option: "--with-xmlrpc-c"
+            suffix: "-xmlrpc-c-daily-${{ needs.check-version.outputs.build_id }}"
+          - arch: amd64
+            option: "--with-xmlrpc-tinyxml2"
+            suffix: "-xmlrpc-tinyxml2-daily-${{ needs.check-version.outputs.build_id }}"
+          - arch: arm64
+            option: ""
+            suffix: "-daily-${{ needs.check-version.outputs.build_id }}"
+          - arch: arm64
+            option: "--with-xmlrpc-c"
+            suffix: "-xmlrpc-c-daily-${{ needs.check-version.outputs.build_id }}"
+          - arch: arm64
+            option: "--with-xmlrpc-tinyxml2"
+            suffix: "-xmlrpc-tinyxml2-daily-${{ needs.check-version.outputs.build_id }}"
+    outputs:
+      alpine_version: ${{ steps.alpine.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU for arm64 cross-compilation
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Read Alpine version number from alpine:latest
+        id: alpine
+        run: |
+          ALPINE_VERSION=$(docker run --rm alpine:latest cat /etc/alpine-release)
+          echo "version=$ALPINE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Alpine version: $ALPINE_VERSION"
+
+      - name: Build static rtorrent binary inside Alpine Linux container
+        env:
+          RTORRENT_SHA: ${{ needs.check-version.outputs.rtorrent_sha }}
+          LIBTORRENT_SHA: ${{ needs.check-version.outputs.libtorrent_sha }}
+          ARCH: ${{ matrix.arch }}
+          WITH_OPTION: ${{ matrix.option }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          mkdir -p "${{ github.workspace }}/output"
+          docker run --rm \
+            --platform "linux/${{ matrix.arch }}" \
+            -e "RTORRENT_SHA=${RTORRENT_SHA}" \
+            -e "LIBTORRENT_SHA=${LIBTORRENT_SHA}" \
+            -e "ARCH=${ARCH}" \
+            -e "WITH_OPTION=${WITH_OPTION}" \
+            -e "SUFFIX=${SUFFIX}" \
+            -v "${{ github.workspace }}/build-nightly.sh:/build-nightly.sh:ro" \
+            -v "${{ github.workspace }}/output:/output" \
+            alpine:latest /bin/sh /build-nightly.sh
+
+      - name: Verify binary is statically linked
+        run: |
+          FILE="output/rtorrent-linux-${{ matrix.arch }}${{ matrix.suffix }}"
+          file "$FILE"
+          if readelf -l "$FILE" | grep -q 'INTERP'; then
+            echo "ERROR: Binary is NOT statically linked!"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtorrent-linux-${{ matrix.arch }}${{ matrix.suffix }}
+          path: output/rtorrent-linux-${{ matrix.arch }}${{ matrix.suffix }}
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Publish the nightly binaries as Actions artifacts instead of GitHub releases.
+  # --------------------------------------------------------------------------
+  publish-artifacts:
+    name: Publish Nightly Artifacts
+    needs: [check-version, build]
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-slim
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rtorrent-linux-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate build metadata and checksums
+        working-directory: artifacts
+        env:
+          ALPINE_VERSION: ${{ needs.build.outputs.alpine_version }}
+          RTORRENT_SHA: ${{ needs.check-version.outputs.rtorrent_sha }}
+          LIBTORRENT_SHA: ${{ needs.check-version.outputs.libtorrent_sha }}
+          BUILD_ID: ${{ needs.check-version.outputs.build_id }}
+        run: |
+          find . -maxdepth 1 -type f -name 'rtorrent-linux-*' -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS
+
+          {
+            echo "rtorrent_sha=${RTORRENT_SHA}"
+            echo "libtorrent_sha=${LIBTORRENT_SHA}"
+            echo "build_id=${BUILD_ID}"
+            echo "alpine_version=${ALPINE_VERSION}"
+            echo "built_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } > UPSTREAM_COMMITS
+
+      - name: Upload nightly binary bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: rtorrent-nightly-${{ needs.check-version.outputs.build_id }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload nightly commit metadata
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-upstream-commits
+          path: artifacts/UPSTREAM_COMMITS
+          if-no-files-found: error
+          retention-days: 90
