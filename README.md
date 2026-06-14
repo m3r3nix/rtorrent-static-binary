@@ -1,3 +1,4 @@
+[![Build static rTorrent binaries (release)](https://github.com/m3r3nix/rtorrent-static-binary/actions/workflows/release.yml/badge.svg)](https://github.com/m3r3nix/rtorrent-static-binary/actions/workflows/release.yml)
 # Static rTorrent Binaries
 
 This repository provides fully static rTorrent binaries built from the original source code of [rakshasa/rtorrent](https://github.com/rakshasa/rtorrent).
