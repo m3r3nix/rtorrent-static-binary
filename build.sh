@@ -83,7 +83,6 @@ fi
 
 autoreconf -fi
 ./configure \
-    --enable-aligned \
     --enable-static \
     --disable-shared \
     --disable-debug \
