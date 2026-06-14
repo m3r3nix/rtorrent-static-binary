@@ -219,9 +219,9 @@ jobs:
             -e "ARCH=${ARCH}" \
             -e "WITH_OPTION=${WITH_OPTION}" \
             -e "SUFFIX=${SUFFIX}" \
-            -v "${{ github.workspace }}/build-nightly.sh:/build-nightly.sh:ro" \
+            -v "${{ github.workspace }}/build.sh:/build.sh:ro" \
             -v "${{ github.workspace }}/output:/output" \
-            alpine:latest /bin/sh /build-nightly.sh
+            alpine:latest /bin/sh /build.sh
 
       - name: Verify binary is statically linked
         run: |
