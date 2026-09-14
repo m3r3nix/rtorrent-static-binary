@@ -87,8 +87,8 @@ autoreconf -fi
     --disable-shared \
     --disable-debug \
     PKG_CONFIG="pkg-config --static" \
-    CFLAGS="-Os" \
-    CXXFLAGS="-Os"
+    CFLAGS="-Os -flto=auto -pipe" \
+    CXXFLAGS="-Os -flto=auto -pipe"
 
 make -j"$(nproc)"
 make install
@@ -116,10 +116,10 @@ autoreconf -fi
     --disable-shared \
     --disable-debug \
     PKG_CONFIG="pkg-config --static" \
-    CFLAGS="-Os" \
-    CXXFLAGS="-Os"
+    CFLAGS="-Os -flto=auto -pipe" \
+    CXXFLAGS="-Os -flto=auto -pipe"
 
-make -j"$(nproc)" LDFLAGS="-all-static -Wl,--as-needed"
+make -j"$(nproc)" LDFLAGS="-Os -flto=auto -all-static -Wl,--as-needed"
 
 # ---------------------------------------------------------------------------
 # 4. Copy and verify the output binary
