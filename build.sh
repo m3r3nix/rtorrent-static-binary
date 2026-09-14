@@ -29,6 +29,9 @@ if [ -z "${VERSION_NUM}" ] && { [ -z "${RTORRENT_SHA}" ] || [ -z "${LIBTORRENT_S
     exit 1
 fi
 
+# Shared compiler flags, also passed to the final LTO link.
+BUILD_FLAGS="-Os -flto=auto -pipe -ffunction-sections -fdata-sections"
+
 # ---------------------------------------------------------------------------
 # 1. System packages
 # ---------------------------------------------------------------------------
@@ -87,8 +90,8 @@ autoreconf -fi
     --disable-shared \
     --disable-debug \
     PKG_CONFIG="pkg-config --static" \
-    CFLAGS="-Os -flto=auto -pipe" \
-    CXXFLAGS="-Os -flto=auto -pipe"
+    CFLAGS="${BUILD_FLAGS}" \
+    CXXFLAGS="${BUILD_FLAGS}"
 
 make -j"$(nproc)"
 make install
@@ -116,10 +119,10 @@ autoreconf -fi
     --disable-shared \
     --disable-debug \
     PKG_CONFIG="pkg-config --static" \
-    CFLAGS="-Os -flto=auto -pipe" \
-    CXXFLAGS="-Os -flto=auto -pipe"
+    CFLAGS="${BUILD_FLAGS}" \
+    CXXFLAGS="${BUILD_FLAGS}"
 
-make -j"$(nproc)" LDFLAGS="-Os -flto=auto -all-static -Wl,--as-needed"
+make -j"$(nproc)" LDFLAGS="${BUILD_FLAGS} -all-static -Wl,--as-needed,--gc-sections"
 
 # ---------------------------------------------------------------------------
 # 4. Copy and verify the output binary
